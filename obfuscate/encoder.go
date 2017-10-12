@@ -31,14 +31,14 @@ func NewEncoder(bufferSize int, master *MasterKey, input io.Reader, outputs ...i
 }
 
 // Encode encrypts the io.Reader into the specified io.Writer outputs.
-// This methods will return an error if the key is invalid or the encryption process fails
+// This methods will return an error if the key is invalid or the encryption process fails.
 func (e *Encoder) Encode() (Status, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	return e.EncodeContext(ctx)
 }
 
-// EncodeContext encrypts the io.Reader into the specified io.Writer outputs and receives cancellation signal on the context parameter
+// EncodeContext encrypts the io.Reader into the specified io.Writer outputs and receives cancellation signal on the context parameter.
 // This methods will return an error if the key is invalid or the encryption process fails.
 func (e *Encoder) EncodeContext(ctx context.Context) (Status, error) {
 	if !e.master.isValid() {

@@ -41,7 +41,6 @@ func (w *WorkBucket) Open() {
 	ctx, cancel := context.WithCancel(context.Background())
 	w.cancel = cancel
 
-	// if w.workList is not a buffered channel, cap(w.workList) will be zero
 	for i := 0; i <= cap(w.pipe.ch); i++ {
 		w.wg.Add(1)
 		go w.readFromThePipe(ctx)
@@ -57,7 +56,7 @@ func (w *WorkBucket) Close() {
 	defer w.mux.Unlock()
 
 	if w.cancel != nil && w.isOpen {
-		w.pipe.close()
+		w.pipe.shutdown()
 		w.cancel()
 		w.wg.Wait()
 		w.isOpen = false

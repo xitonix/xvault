@@ -10,6 +10,6 @@ var (
 
 	// ErrOperationInProgress is the result of any invalid operation on an entity which is already being processed
 	ErrOperationInProgress = errors.New("the operation is in progress")
-	// ErrInvalidWorkListChannel will be raised is the vault's work list channel is nil
-	ErrInvalidWorkListChannel = errors.New("work list channel is nil")
+	// ErrClosedTap will be raised if the user tries to push to the pipe from a closed Tap
+	ErrClosedTap = errors.New("cannot push from a closed tap")
 )

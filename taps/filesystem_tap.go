@@ -110,14 +110,18 @@ func (f *FilesystemTap) Errors() <-chan error {
 	return f.errors
 }
 
+func (f *FilesystemTap) Connect(pipe *obfuscate.Pipe) {
+	f.pipe = pipe
+}
+
 // Open starts the filesystem watcher on the source directory
-func (f *FilesystemTap) Open(pipe *obfuscate.Pipe) {
+func (f *FilesystemTap) Open() {
 	f.mux.Lock()
 	defer f.mux.Unlock()
 	if f.isOpen {
 		return
 	}
-	f.pipe = pipe
+
 	f.wg.Add(1)
 	go func() {
 		defer f.wg.Done()
@@ -265,7 +269,11 @@ func (f *FilesystemTap) dispatchWorkUnit(path string, file os.FileInfo) {
 	t.AddMetadata(outputMetadataKey, name+encodedFileExtension)
 	t.AddMetadata(inputMetadataKey, inputFullPath)
 	f.reportProgress(t)
-	f.pipe.Push(obfuscate.NewWorkUnit(t, f.whenDone))
+	err = f.pipe.Push(obfuscate.NewWorkUnit(t, f.whenDone))
+	if err != nil && f.notify {
+		f.errors <- fmt.Errorf("failed to process '%s': %s", t.Name(), err)
+		return
+	}
 }
 
 func (f *FilesystemTap) createTargetSubDirectory(path, name string) {
