@@ -1,12 +1,13 @@
 package obfuscate
 
 import (
-	"io"
-
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"io"
+
 	"github.com/NebulousLabs/fastrand"
+	"github.com/xitonix/xvault/b64"
 	"github.com/xitonix/xvault/hash"
 )
 
@@ -18,6 +19,21 @@ const (
 	signatureLength   = 28
 	keyLength         = 32
 )
+
+var (
+	b64Encoding b64.Base64Encoding
+)
+
+// SetBase64Encoding sets the base64 encoder used across the package.
+// The default is RawStandardEncoding which is the standard raw, un-padded base64 encoding,
+// as defined in RFC 4648 section 3.2 and is the same as StdEncoding but omits padding characters.
+func SetBase64Encoding(enc b64.Base64Encoding) {
+	b64Encoding = enc
+}
+
+func init() {
+	b64Encoding = b64.NewRawStandardEncoding()
+}
 
 func getIV(text []byte, fixed bool) ([]byte, error) {
 	if fixed {

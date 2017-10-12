@@ -2,10 +2,9 @@ package obfuscate
 
 import (
 	"bytes"
+	"github.com/xitonix/xvault/hash"
 	"strings"
 	"unicode/utf8"
-	"github.com/xitonix/xvault/b64"
-	"github.com/xitonix/xvault/hash"
 )
 
 // MasterKey cryptography master key
@@ -64,7 +63,7 @@ func KeyFromPassword(pass string) (*MasterKey, error) {
 		return nil, err
 	}
 
-	base64 := b64.Encode(b)
+	base64 := b64Encoding.Encode(b)
 
 	key, err := hash.SHA256(base64)
 	if err != nil {
@@ -84,7 +83,7 @@ func KeyFromPassword(pass string) (*MasterKey, error) {
 		return nil, err
 	}
 	password := append(hashedSignature, encrypted...)
-	password = b64.Encode(password)
+	password = b64Encoding.Encode(password)
 
 	return &MasterKey{
 		key:       key,
@@ -101,5 +100,5 @@ func (k *MasterKey) isValid() bool {
 }
 
 func promotePassword(pass string) []byte {
-	return b64.Encode([]byte(strings.ToLower(pass) + pass + strings.ToUpper(pass)))
+	return b64Encoding.Encode([]byte(strings.ToLower(pass) + pass + strings.ToUpper(pass)))
 }

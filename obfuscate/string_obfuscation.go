@@ -4,7 +4,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"errors"
-	"github.com/xitonix/xvault/b64"
 )
 
 // EncryptBytesFixed encrypts a string using a random crypto IV
@@ -41,7 +40,7 @@ func DecryptBytes(key, textBytes []byte) ([]byte, error) {
 	textBytes = textBytes[aes.BlockSize:]
 	cfb := cipher.NewCFBDecrypter(block, iv)
 	cfb.XORKeyStream(textBytes, textBytes)
-	data, err := b64.Decode(textBytes)
+	data, err := b64Encoding.Decode(textBytes)
 
 	if err != nil {
 		return nil, err
@@ -50,7 +49,7 @@ func DecryptBytes(key, textBytes []byte) ([]byte, error) {
 }
 
 func allocate(text []byte, fixed bool) ([]byte, []byte, error) {
-	b := b64.Encode(text)
+	b := b64Encoding.Encode(text)
 
 	cipherText := make([]byte, aes.BlockSize+len(b))
 	iv, err := getIV(text, fixed)
