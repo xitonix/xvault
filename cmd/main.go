@@ -19,13 +19,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	pipe := obfuscate.NewPipe(10)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	tap, err := taps.NewFilesystemTap("d:\\src", "d:\\target", 100*time.Millisecond, true, true, true)
-	bucket, err := obfuscate.NewBucket(master, pipe, tap)
+	tap, err := taps.NewFilesystemTap("d:\\src", "d:\\target", 100*time.Millisecond, master, true, true)
+	engine, err := obfuscate.NewEngine(10, true, tap)
 
 	if err != nil {
 		log.Fatalln(err)
@@ -44,22 +39,25 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for p := range tap.Progress() {
+		for p := range engine.Progress() {
+			m := tap.ParseMetadata(p.Metadata)
 			if p.Status == obfuscate.Queued {
-				fmt.Printf("Encrypting %s...\n", p.Input)
+				fmt.Printf("Encrypting %s...\n", m.Input.Name)
 				continue
 			}
-			fmt.Printf("%s %s\n", p.Input, p.Status)
+			fmt.Printf("%s > %s %s\n", m.Input.Name, m.Output.Name, p.Status)
 		}
 	}()
 
-	bucket.Open()
+	err = engine.Start()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	signals := make(chan os.Signal)
 	signal.Notify(signals, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
 	<-signals
-
-	bucket.Close()
-	fmt.Println("The bucket has been stopped successfully")
+	engine.Stop()
+	fmt.Println("The engine has been stopped successfully")
 	wg.Wait()
 }

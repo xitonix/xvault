@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-// Operation represents the operation which needs to be done by a task
+// Operation represents the operation which needs to be done by a Task
 type Operation int8
 
 const (
@@ -17,47 +17,30 @@ const (
 
 // Task is a unit of encryption/decryption work
 type Task struct {
-	name  string
 	mode  Operation
 	input io.Reader
 
-	// Error the error details of a failed task
-	Error error
-
 	status Status
-	// MetaData key-value store of custom task data
-	MetaData map[string]interface{}
 
 	mux        sync.Mutex
 	inProgress bool
 	outputs    []io.Writer
 }
 
-// Name returns the name of the task
-func (t *Task) Name() string {
-	return t.name
-}
-
-// NewTask creates a new task object
-func NewTask(name string, mode Operation, input io.Reader, output io.Writer) *Task {
+// NewTask creates a new Task object
+func NewTask(mode Operation, input io.Reader, output io.Writer) *Task {
 	return &Task{
-		name:     name,
 		mode:     mode,
 		input:    input,
 		outputs:  []io.Writer{output},
-		MetaData: make(map[string]interface{}),
+
 		status:   Queued,
 	}
 }
 
-// AddMetadata adds metadata to the
-func (t *Task) AddMetadata(key string, value interface{}) {
-	t.MetaData[key] = value
-}
-
-// AddOutput adds a new new output to the task
-// Calling this function on an in-progress task will return ErrOperationInProgress error
-// You can check the progress state of a task by calling IsRunning method
+// AddOutput adds a new new output to the Task
+// Calling this function on an in-progress Task will return ErrOperationInProgress error
+// You can check the progress state of a Task by calling IsRunning method
 func (t *Task) AddOutput(output io.Writer) error {
 	t.mux.Lock()
 	defer t.mux.Unlock()
@@ -70,7 +53,7 @@ func (t *Task) AddOutput(output io.Writer) error {
 
 // CloseInput closes the input Reader.
 // If the reader is not a io.Closer, calling this function will have no effect
-// Calling this function on an in-progress task will return ErrOperationInProgress error
+// Calling this function on an in-progress Task will return ErrOperationInProgress error
 func (t *Task) CloseInput() error {
 	t.mux.Lock()
 	defer t.mux.Unlock()
@@ -86,7 +69,7 @@ func (t *Task) CloseInput() error {
 
 // CloseOutputs closes all the output Writers.
 // If the output is not a io.Closer, calling this function will have no effect
-// Calling this function on an in-progress task will return ErrOperationInProgress error
+// Calling this function on an in-progress Task will return ErrOperationInProgress error
 func (t *Task) CloseOutputs() error {
 	t.mux.Lock()
 	defer t.mux.Unlock()

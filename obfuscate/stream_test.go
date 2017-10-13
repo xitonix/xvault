@@ -6,11 +6,11 @@ import (
 )
 
 func TestPipeClosure(t *testing.T) {
-	pipe := NewPipe(10)
+	pipe := newStream(10)
 	closed := false
 	pipe.open()
 	go func(closed *bool) {
-		<-pipe.ch
+		<-pipe.tube
 		*closed = true
 	}(&closed)
 
@@ -18,19 +18,19 @@ func TestPipeClosure(t *testing.T) {
 	time.Sleep(2 * time.Millisecond)
 
 	if !closed {
-		t.Error("The pipe channel was supposed to be closed")
+		t.Error("The stream channel was supposed to be closed")
 	}
 }
 
 func TestPipeClosureWithTaps(t *testing.T) {
 	tap1 := newMockedTap(false, 0)
 	tap2 := newMockedTap(false, 0)
-	pipe := NewPipe(10)
+	pipe := newStream(10)
 	pipe.attachTaps(tap1, tap2)
 	closed := false
 	pipe.open()
 	go func(closed *bool) {
-		<-pipe.ch
+		<-pipe.tube
 		*closed = true
 	}(&closed)
 
@@ -55,7 +55,7 @@ func TestPipeClosureWithTaps(t *testing.T) {
 	time.Sleep(2 * time.Millisecond)
 
 	if !closed {
-		t.Error("The pipe channel was supposed to be closed")
+		t.Error("The stream channel was supposed to be closed")
 	}
 }
 
@@ -93,13 +93,13 @@ func TestUnitOfWorkFlowToThePipe(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.title, func(t *testing.T) {
 			tap := newMockedTap(false, tc.numberOfWorkUnits)
-			pipe := NewPipe(10)
+			pipe := newStream(10)
 			if tc.openThePipe {
 				pipe.open()
 			}
 			var count int
 			go func() {
-				for range pipe.ch {
+				for range pipe.tube {
 					count++
 				}
 			}()
@@ -120,11 +120,11 @@ func TestUnitOfWorkFlowToThePipe(t *testing.T) {
 func TestUnitOfWorkFlowAfterOpeningThePipe(t *testing.T) {
 	const numberOfWorkUnits = 10
 	tap := newMockedTap(false, numberOfWorkUnits)
-	pipe := NewPipe(10)
+	pipe := newStream(10)
 
 	var count int
 	go func() {
-		for range pipe.ch {
+		for range pipe.tube {
 			count++
 		}
 	}()
@@ -132,13 +132,13 @@ func TestUnitOfWorkFlowAfterOpeningThePipe(t *testing.T) {
 	tap.Open()
 	time.Sleep(5 * time.Millisecond)
 	if count > 0 {
-		t.Errorf("No work units should have flowed into a closed pipe, but received %d units", count)
+		t.Errorf("No work units should have flowed into a closed stream, but received %d units", count)
 	}
 	pipe.open()
 	time.Sleep(5 * time.Millisecond)
 
 	if numberOfWorkUnits != count {
-		t.Errorf("Expected to receive %d work units to flow into pipe, but received %d", numberOfWorkUnits, count)
+		t.Errorf("Expected to receive %d work units to flow into stream, but received %d", numberOfWorkUnits, count)
 	}
 
 	pipe.shutdown()

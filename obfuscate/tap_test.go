@@ -16,13 +16,13 @@ func TestPushFromAnUnboundTap(t *testing.T) {
 
 func TestPushFromABoundOpenTap(t *testing.T) {
 	tap := newMockedTap(false, 1)
-	pipe := NewPipe(10)
+	pipe := newStream(10)
 	tap.Connect(pipe)
 	tap.Open()
 	key, err := KeyFromPassword("password")
 	assert.Errors(t, false, err, nil)
 
-	_, err = NewBucket(key, pipe, tap)
+	_, err = NewEngine(key, pipe, tap)
 	assert.Errors(t, false, err, nil)
 
 	err = tap.pipe.Push(&WorkUnit{})
@@ -34,7 +34,7 @@ func TestPushFromABoundOpenTap(t *testing.T) {
 
 func TestPushFromABoundOpenTapWithoutBucket(t *testing.T) {
 	tap := newMockedTap(false, 1)
-	pipe := NewPipe(10)
+	pipe := newStream(10)
 	tap.Connect(pipe)
 	tap.Open()
 

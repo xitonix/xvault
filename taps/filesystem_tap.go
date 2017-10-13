@@ -14,47 +14,48 @@ import (
 )
 
 const (
-	encodedFileExtension = ".xv"
-	outputMetadataKey    = "output"
-	inputMetadataKey     = "input"
+	encodedFileExtension  = ".xv"
+	outputMetadataKey     = "output"
+	inputMetadataKey      = "input"
+	outputFullMetadataKey = "output_full_path"
+	inputFullMetadataKey  = "input_full_path"
 )
 
-// Report represents the progress details of a task
-type Report struct {
-	// Status the status of the operation
-	Status obfuscate.Status
-	// Input the name of the input file
-	Input string
-	// Output the name of the output file
-	Output string
-	// Error the error details of a failed task
-	Error error
+type FileSet struct {
+	Input, Output File
+}
+
+type File struct {
+	Name, Path string
 }
 
 // FilesystemTap is a vault with the functionality of monitoring local filesystem and encrypt the content into the target directory.
 // Automatic decryption of the files is not implemented in this vault, because of security reasons.
 type FilesystemTap struct {
-	pipe           *obfuscate.Pipe
-	progress       chan Report
+	pipe           obfuscate.RequestChannel
+	master         *obfuscate.MasterKey
 	watcher        *watcher.Watcher
 	interval       time.Duration
 	errors         chan error
-	notify, report bool
+	notify         bool
 	delete         bool
 	source, target string
 	wg             *sync.WaitGroup
 
+	openOnce  sync.Once
+	closeOnce sync.Once
+
+	//to prevent multiple go routines to run Open and Close at the same time
 	mux    sync.Mutex
 	isOpen bool
 }
 
 // NewFilesystemTap creates a new instance of local storage vault.
-// You can feed this vault to a WorkBucket object to automate your encryption tasks.
+// You can feed this vault to a Engine object to automate your encryption tasks.
 //
 // If you have enabled error notification by setting  'notifyErrors' to true, you need to make sure
 // that you subscribe to "Errors" channel to read off the notification pipe, otherwise you will get
-// get blocked on the full channel. Same rule applies to "reportProgress" flag. You will need to subscribe to
-// "Progress" channel to avoid blocking the vault operations, if you set the flag to true.
+// get blocked on the full channel.
 //
 // "parallelism" specifies the number of files you would like to process at the same time.
 //
@@ -67,8 +68,8 @@ type FilesystemTap struct {
 // by the vault if they don't already exist.
 func NewFilesystemTap(source, target string,
 	pollingInterval time.Duration,
+	master *obfuscate.MasterKey,
 	notifyErrors bool,
-	reportProgress bool,
 	deleteCompleted bool) (*FilesystemTap, error) {
 	src, err := createDirIfNotExist(source)
 	if err != nil {
@@ -89,16 +90,16 @@ func NewFilesystemTap(source, target string,
 	}
 
 	return &FilesystemTap{
-		progress: make(chan Report),
 		watcher:  w,
 		interval: pollingInterval,
 		errors:   make(chan error),
 		notify:   notifyErrors,
-		report:   reportProgress,
 		source:   src,
 		target:   tg,
 		delete:   deleteCompleted,
 		wg:       &sync.WaitGroup{},
+		master:   master,
+		pipe:     make(obfuscate.RequestChannel),
 	}, nil
 }
 
@@ -110,68 +111,54 @@ func (f *FilesystemTap) Errors() <-chan error {
 	return f.errors
 }
 
-func (f *FilesystemTap) Connect(pipe *obfuscate.Pipe) {
-	f.pipe = pipe
+func (f *FilesystemTap) Requests() obfuscate.RequestChannel {
+	return f.pipe
 }
 
 // Open starts the filesystem watcher on the source directory
 func (f *FilesystemTap) Open() {
 	f.mux.Lock()
 	defer f.mux.Unlock()
+
 	if f.isOpen {
 		return
 	}
+	f.openOnce.Do(func() {
 
-	f.wg.Add(1)
-	go func() {
-		defer f.wg.Done()
-		for {
-			select {
-			case event := <-f.watcher.Event:
-				f.dispatchWorkUnit(event.Path, event.FileInfo)
-			case err := <-f.watcher.Error:
-				if f.notify {
-					f.errors <- err
-				}
-			case <-f.watcher.Closed:
-				return
-			}
+		f.wg.Add(1)
+		go f.monitorSourceDirectory()
+
+		f.isOpen = true
+
+		// Process the files which are currently in the source folder
+		for path, file := range f.watcher.WatchedFiles() {
+			f.dispatchWorkUnit(path, file)
 		}
-	}()
 
-	// Process the files which are currently in the source folder
-	for path, file := range f.watcher.WatchedFiles() {
-		f.dispatchWorkUnit(path, file)
-	}
-
-	f.wg.Add(1)
-	go func() {
-		defer f.wg.Done()
-		err := f.watcher.Start(f.interval)
-
-		if err != nil && f.notify {
-			f.errors <- fmt.Errorf("filesystem watcher: %s", err)
-		}
-	}()
-	f.isOpen = true
+		f.wg.Add(1)
+		go f.startDirectoryWatcher()
+	})
 }
 
 // Close stops the filesystem watcher and releases the resources.
 // NOTE: You don't need to explicitly call this function when you are using this vault
-// with a "WorkBucket". The processor will take care of it
+// with a "Engine". The processor will take care of it
 func (f *FilesystemTap) Close() {
 	f.mux.Lock()
 	defer f.mux.Unlock()
+
 	if !f.isOpen {
 		return
 	}
-	if f != nil && f.watcher != nil {
-		f.watcher.Close()
-		f.wg.Wait()
-		close(f.errors)
-		close(f.progress)
-	}
-	f.isOpen = false
+	f.closeOnce.Do(func() {
+		if f != nil && f.watcher != nil {
+			f.isOpen = false
+			f.watcher.Close()
+			f.wg.Wait()
+			close(f.pipe)
+			close(f.errors)
+		}
+	})
 }
 
 func (f *FilesystemTap) IsOpen() bool {
@@ -180,35 +167,54 @@ func (f *FilesystemTap) IsOpen() bool {
 	return f.isOpen
 }
 
-// Progress returns a channel on which you will receive the result of processing each task.
-// The failed tasks will be dispatched on this channel as well.
-// NOTE: In order to receive the progress report on this channel,
-// you need to turn reporting ON by setting
-// "reportProgress" parameter of "NewLocalVault" method to true.
-func (f *FilesystemTap) Progress() <-chan Report {
-	return f.progress
+func (f *FilesystemTap) startDirectoryWatcher() {
+	defer f.wg.Done()
+	err := f.watcher.Start(f.interval)
+
+	if err != nil {
+		f.reportError(fmt.Errorf("filesystem watcher: %s", err))
+	}
+}
+
+func (f *FilesystemTap) monitorSourceDirectory() {
+	defer f.wg.Done()
+	for {
+		select {
+		case event := <-f.watcher.Event:
+			f.dispatchWorkUnit(event.Path, event.FileInfo)
+		case err := <-f.watcher.Error:
+			f.reportError(err)
+		case <-f.watcher.Closed:
+			return
+		}
+	}
+}
+
+func (f *FilesystemTap) reportError(err error) {
+	if f.isOpen && f.notify {
+		f.errors <- err
+	}
 }
 
 // whenDone is a callback method which will get called by the processor once the
 // processing of a task has been finished
-func (f *FilesystemTap) whenDone(task *obfuscate.Task) {
-	input := task.Name()
-	output := task.MetaData[outputMetadataKey].(string)
+func (f *FilesystemTap) whenDone(w *obfuscate.WorkUnit) {
+	m := f.ParseMetadata(w.Metadata)
 
-	err := task.CloseInput()
-	if err != nil && f.notify {
-		f.errors <- fmt.Errorf("failed to close '%s': %s", input, err)
+	err := w.Task.CloseInput()
+	if err != nil {
+		f.reportError(fmt.Errorf("failed to close '%s': %s", m.Input.Name, err))
 	}
-	err = task.CloseOutputs()
-	if err != nil && f.notify {
-		f.errors <- fmt.Errorf("failed to close '%v': %s", output, err)
+	err = w.Task.CloseOutputs()
+	if err != nil {
+		f.reportError(fmt.Errorf("failed to close '%v': %s", m.Output.Name, err))
 	}
 
-	if f.delete && task.Status() == obfuscate.Completed {
-		file := task.MetaData[inputMetadataKey].(string)
+	if f.delete && w.Task.Status() == obfuscate.Completed {
+		file := m.Input.Path
 		err := os.Remove(file)
-		if err != nil && f.notify {
-			f.errors <- fmt.Errorf("failed to remove '%s': %s", input, err)
+		if err != nil {
+			f.reportError(fmt.Errorf("failed to remove '%s': %s", m.Input.Name, err))
 		}
 		dir := filepath.Dir(file)
 		isEmpty := isDirEmpty(dir)
@@ -216,8 +222,6 @@ func (f *FilesystemTap) whenDone(task *obfuscate.Task) {
 			os.RemoveAll(dir)
 		}
 	}
-
-	f.reportProgress(task)
 }
 
 func (f *FilesystemTap) openInputFile(path string) (*os.File, string, error) {
@@ -247,57 +251,57 @@ func (f *FilesystemTap) createOutputFile(name, inputFullPath string) (*os.File, 
 
 func (f *FilesystemTap) dispatchWorkUnit(path string, file os.FileInfo) {
 
-	if (f.source == path) || file.IsDir() {
+	if !f.isOpen || (f.source == path) || file.IsDir() {
 		return
 	}
 
 	input, inputFullPath, err := f.openInputFile(path)
-	if err != nil && f.notify {
-		f.errors <- fmt.Errorf("failed to open '%s': %s", path, err)
+	if err != nil {
+		f.reportError(fmt.Errorf("failed to open '%s': %s", path, err))
 		return
 	}
 
 	name := file.Name()
 
 	output, outputFullPath, err := f.createOutputFile(name, inputFullPath)
-	if err != nil && f.notify {
-		f.errors <- fmt.Errorf("failed to create '%s': %s", outputFullPath, err)
+	if err != nil {
+		f.reportError(fmt.Errorf("failed to create '%s': %s", outputFullPath, err))
 		return
 	}
 
-	t := obfuscate.NewTask(name, obfuscate.Encode, input, output)
-	t.AddMetadata(outputMetadataKey, name+encodedFileExtension)
-	t.AddMetadata(inputMetadataKey, inputFullPath)
-	f.reportProgress(t)
-	err = f.pipe.Push(obfuscate.NewWorkUnit(t, f.whenDone))
-	if err != nil && f.notify {
-		f.errors <- fmt.Errorf("failed to process '%s': %s", t.Name(), err)
-		return
+	t := obfuscate.NewTask(obfuscate.Encode, input, output)
+	w := obfuscate.NewWorkUnit(t, f.master, f.whenDone)
+	w.Metadata[inputMetadataKey] = name
+	w.Metadata[outputMetadataKey] = name + encodedFileExtension
+	w.Metadata[inputFullMetadataKey] = inputFullPath
+	w.Metadata[outputFullMetadataKey] = outputFullPath
+	f.pipe <- w
+}
+
+func (f *FilesystemTap) ParseMetadata(metadata obfuscate.MetadataMap) FileSet {
+	return FileSet{
+		Input: File{
+			Name: metadata[inputMetadataKey].(string),
+			Path: metadata[inputFullMetadataKey].(string),
+		},
+		Output: File{
+			Name: metadata[outputMetadataKey].(string),
+			Path: metadata[outputFullMetadataKey].(string),
+		},
 	}
 }
 
 func (f *FilesystemTap) createTargetSubDirectory(path, name string) {
 	abs, err := filepath.Abs(filepath.Join(f.target, name))
-	if err != nil && f.notify {
-		f.errors <- fmt.Errorf("failed to resolve the path to '%s': %s", path, err)
+	if err != nil {
+		f.reportError(fmt.Errorf("failed to resolve the path to '%s': %s", path, err))
 		return
 	}
 
 	dir, err := createDirIfNotExist(abs)
-	if err != nil && f.notify {
-		f.errors <- fmt.Errorf("failed to create '%s': %s", dir, err)
+	if err != nil {
+		f.reportError(fmt.Errorf("failed to create '%s': %s", dir, err))
 		return
-	}
-}
-
-func (f *FilesystemTap) reportProgress(t *obfuscate.Task) {
-	if f.report {
-		f.progress <- Report{
-			Status: t.Status(),
-			Error:  t.Error,
-			Input:  t.Name(),
-			Output: t.MetaData[outputMetadataKey].(string),
-		}
 	}
 }
 

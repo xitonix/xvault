@@ -18,10 +18,10 @@ func TestTaskAddMetadata(t *testing.T) {
 	task.AddMetadata(metaKey, metaValue)
 	val, ok := task.MetaData[metaKey]
 	if !ok {
-		t.Errorf("Could not find '%s' in the metadata map", metaKey)
+		t.Errorf("Could not find '%s' in the Metadata map", metaKey)
 	}
 	if val.(string) != metaValue {
-		t.Errorf("Expected '%s' metadata value, but received %v", metaValue, val)
+		t.Errorf("Expected '%s' Metadata value, but received %v", metaValue, val)
 	}
 }
 

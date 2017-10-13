@@ -1,35 +1,40 @@
 package obfuscate
 
 type mockedTap struct {
-	pipe              *Pipe
+	pipe              RequestChannel
 	isOpen            bool
 	numberOfWorkUnits int
 	callbackCalled    bool
 	withCallback      bool
+	master            *MasterKey
 }
 
-func newMockedTap(withCallback bool, numberOfWorkUnits int) *mockedTap {
-	return &mockedTap{withCallback: withCallback, numberOfWorkUnits: numberOfWorkUnits}
+func newMockedTap(withCallback bool, numberOfWorkUnits int, master *MasterKey) *mockedTap {
+	return &mockedTap{
+		withCallback:      withCallback,
+		numberOfWorkUnits: numberOfWorkUnits,
+		master:            master,
+	}
 }
 
 func (m *mockedTap) IsOpen() bool {
 	return m.isOpen
 }
 
-func (m *mockedTap) Connect(pipe *Pipe) {
-	m.pipe = pipe
+func (m *mockedTap) Channel() RequestChannel {
+	return m.pipe
 }
 
 func (m *mockedTap) Open() {
 
 	m.isOpen = true
-	var cb CallbackFunc
-	if m.withCallback {
-		cb = m.callback
-	}
-	for i := 0; i < m.numberOfWorkUnits; i++ {
-		m.pipe.Push(NewWorkUnit(&Task{}, cb))
-	}
+	//var cb CallbackFunc
+	//if m.withCallback {
+	//	cb = m.callback
+	//}
+	//for i := 0; i < m.numberOfWorkUnits; i++ {
+	//	m.pipe <- NewWorkUnit(&Task{}, m.master, cb)
+	//}
 }
 
 func (m *mockedTap) Close() {
