@@ -10,7 +10,7 @@ func TestPipeClosure(t *testing.T) {
 	closed := false
 	pipe.open()
 	go func(closed *bool) {
-		<-pipe.tube
+		<-pipe.workList
 		*closed = true
 	}(&closed)
 
@@ -30,7 +30,7 @@ func TestPipeClosureWithTaps(t *testing.T) {
 	closed := false
 	pipe.open()
 	go func(closed *bool) {
-		<-pipe.tube
+		<-pipe.workList
 		*closed = true
 	}(&closed)
 
@@ -99,7 +99,7 @@ func TestUnitOfWorkFlowToThePipe(t *testing.T) {
 			}
 			var count int
 			go func() {
-				for range pipe.tube {
+				for range pipe.workList {
 					count++
 				}
 			}()
@@ -124,7 +124,7 @@ func TestUnitOfWorkFlowAfterOpeningThePipe(t *testing.T) {
 
 	var count int
 	go func() {
-		for range pipe.tube {
+		for range pipe.workList {
 			count++
 		}
 	}()

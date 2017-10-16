@@ -1,7 +1,7 @@
 package obfuscate
 
 type mockedTap struct {
-	pipe              RequestChannel
+	pipe              WorkList
 	isOpen            bool
 	numberOfWorkUnits int
 	callbackCalled    bool
@@ -21,7 +21,7 @@ func (m *mockedTap) IsOpen() bool {
 	return m.isOpen
 }
 
-func (m *mockedTap) Channel() RequestChannel {
+func (m *mockedTap) Channel() WorkList {
 	return m.pipe
 }
 

@@ -7,10 +7,12 @@ type MetadataMap map[string]interface{}
 
 // WorkUnit is a unit of encryption/decryption work
 type WorkUnit struct {
-	Task     *Task
 	master   *MasterKey
 	callback CallbackFunc
+
+	Task     *Task
 	Metadata MetadataMap
+	Error    error
 }
 
 // NewWorkUnit creates a new work unit

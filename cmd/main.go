@@ -2,14 +2,15 @@ package main
 
 import (
 	"fmt"
-	"github.com/xitonix/xvault/obfuscate"
-	"github.com/xitonix/xvault/taps"
 	"log"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/xitonix/xvault/obfuscate"
+	"github.com/xitonix/xvault/taps"
 )
 
 func main() {
@@ -19,13 +20,13 @@ func main() {
 		log.Fatal(err)
 	}
 
-	tap, err := taps.NewFilesystemTap("d:\\src", "d:\\target", 100*time.Millisecond, master, true, true)
-	engine, err := obfuscate.NewEngine(10, true, tap)
+	tap, err := taps.NewFilesystemTap("/home/alexg/src", "/home/alexg/target", 100*time.Millisecond, master, true, true, true)
 
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatal(err)
 	}
 
+	engine := obfuscate.NewEngine(10, tap)
 	wg := &sync.WaitGroup{}
 
 	wg.Add(1)
@@ -39,20 +40,12 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for p := range engine.Progress() {
-			m := tap.ParseMetadata(p.Metadata)
-			if p.Status == obfuscate.Queued {
-				fmt.Printf("Encrypting %s...\n", m.Input.Name)
-				continue
-			}
-			fmt.Printf("%s > %s %s\n", m.Input.Name, m.Output.Name, p.Status)
+		for p := range tap.Progress() {
+			fmt.Printf("%s > %s %s\n", p.Input.Name, p.Output.Name, p.Status)
 		}
 	}()
 
-	err = engine.Start()
-	if err != nil {
-		log.Fatal(err)
-	}
+	engine.Start()
 
 	signals := make(chan os.Signal)
 	signal.Notify(signals, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)

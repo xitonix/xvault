@@ -52,7 +52,7 @@ func ExampleDecoder_decodeContext() {
 	decoder := NewDecoder(1024, master, input, output)
 	ctx, cancel := context.WithCancel(context.Background())
 
-	//Queued the time consuming process of decoding a big file
+	// Queued the time consuming process of decoding a big file
 	_, err = decoder.DecodeContext(ctx)
 
 	go func(cancel context.CancelFunc) {
