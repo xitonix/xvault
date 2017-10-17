@@ -12,7 +12,7 @@ $ go get github.com/xitonix/xvault
 
 ## Documentation
 
-Documentation is hosted at GoDoc[![GoDoc](https://godoc.org/github.com/xitonix/xvault?status.svg)](https://godoc.org/github.com/xitonix/xvault)
+![GoDoc](https://godoc.org/github.com/xitonix/xvault?status.svg)](https://godoc.org/github.com/xitonix/xvault)
 
 [](https://godoc.org/github.com/xitonix/xvault)
 
