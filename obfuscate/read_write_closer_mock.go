@@ -1,4 +1,4 @@
-package mocks
+package obfuscate
 
 type OnlyWriter struct{}
 

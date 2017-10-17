@@ -1,3 +1,4 @@
+// Directory watcher tool
 package main
 
 import (

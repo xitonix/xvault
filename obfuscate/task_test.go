@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/mattetti/filebuffer"
-	"github.com/xitonix/xvault/obfuscate/mocks"
 )
 
 func TestTaskAddOutput(t *testing.T) {
@@ -53,8 +52,8 @@ func TestTaskAddOutput(t *testing.T) {
 }
 
 func TestTaskCloseInputOutput(t *testing.T) {
-	in := &mocks.ReadCloser{}
-	out := &mocks.WriteCloser{}
+	in := &ReadCloser{}
+	out := &WriteCloser{}
 
 	task := NewTask(Encode, in, out)
 	task.CloseInput()
@@ -70,8 +69,8 @@ func TestTaskCloseInputOutput(t *testing.T) {
 }
 
 func TestTaskCloseInputInProgress(t *testing.T) {
-	in := &mocks.ReadCloser{}
-	out := &mocks.WriteCloser{}
+	in := &ReadCloser{}
+	out := &WriteCloser{}
 
 	task := NewTask(Encode, in, out)
 	task.markAsInProgress()

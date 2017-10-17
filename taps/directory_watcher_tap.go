@@ -36,8 +36,7 @@ type Result struct {
 	Input, Output File
 }
 
-// DirectoryWatcherTap is a vault with the functionality of monitoring local filesystem and encrypt the content into the target directory.
-// Automatic decryption of the files is not implemented in this vault, because of security reasons.
+// DirectoryWatcherTap is a tap with the functionality of monitoring local filesystem and encrypting the content into the target directory.
 type DirectoryWatcherTap struct {
 	pipe           obfuscate.WorkList
 	progress       chan *Result
@@ -60,8 +59,7 @@ type DirectoryWatcherTap struct {
 	isOpen bool
 }
 
-// NewDirectoryWatcherTap creates a new instance of local storage vault.
-// You can feed this vault to a Engine object to automate your encryption tasks.
+// NewDirectoryWatcherTap creates a new instance of directory watcher tap.
 //
 // If you have enabled error notification by setting  'notifyErrors' to true, you need to make sure
 // that you subscribe to "Errors" channel to read off the notification pipe, otherwise you will get
@@ -75,7 +73,7 @@ type DirectoryWatcherTap struct {
 // operation has been finished successfully.
 //
 // "source" and "target" are the paths to source and destination directories. They will get created
-// by the vault if they don't already exist.
+// by the tap if they don't already exist.
 func NewDirectoryWatcherTap(source, target string,
 	pollingInterval time.Duration,
 	master *obfuscate.MasterKey,
@@ -116,23 +114,42 @@ func NewDirectoryWatcherTap(source, target string,
 	}, nil
 }
 
-// Errors returns a read-only channel on which you will receive the
-// failure notifications. In order to receive the errors on the channel,
-// you need to turn error notifications ON by setting
-// "notifyErrors" parameter of "NewLocalVault" method to true.
+// Errors returns a read-only channel on which you will receive the failure notifications.
+//
+// In order to receive the errors on the channel, you need to turn error notifications On by setting
+// "notifyErrors" parameter of "NewDirectoryWatcherTap" method to true.
+// You can also switch it On or Off by calling the SwitchErrorNotification(...) method
 func (d *DirectoryWatcherTap) Errors() <-chan error {
 	return d.errors
 }
 
+// Pipe returns the work list channel from which the engine will receive the encryption requests.
 func (d *DirectoryWatcherTap) Pipe() obfuscate.WorkList {
 	return d.pipe
 }
 
+// Progress returns a read-only channel on which you will receive the progress report
+//
+// In order to receive progress report on the channel, you need to turn it On by setting
+// "reportProgress" parameter of "NewDirectoryWatcherTap" method to true.
+// You can also switch it On or Off by calling the SwitchProgressReport(...) method
 func (d *DirectoryWatcherTap) Progress() <-chan *Result {
 	return d.progress
 }
 
-// Open starts the filesystem watcher on the source directory
+// SwitchErrorNotification switches error notification ON/OFF
+func (d *DirectoryWatcherTap) SwitchErrorNotification(on bool) {
+	d.notifyErr = on
+}
+
+// SwitchProgressReport switches progress report ON/OFF
+func (d *DirectoryWatcherTap) SwitchProgressReport(on bool) {
+	d.report = on
+}
+
+// Open starts the directory watcher on the source directory.
+// You SHOULD NOT call this method explicitly when you use the tap with an Engine object.
+// Starting the engine will take care of opening the tap.
 func (d *DirectoryWatcherTap) Open() {
 	d.mux.Lock()
 	defer d.mux.Unlock()
@@ -159,8 +176,8 @@ func (d *DirectoryWatcherTap) Open() {
 }
 
 // Close stops the filesystem watcher and releases the resources.
-// NOTE: You don't need to explicitly call this function when you are using this vault
-// with a "Engine". The processor will take care of it
+// NOTE: You don't need to explicitly call this function when you are using the tap
+// with an Engine
 func (d *DirectoryWatcherTap) Close() {
 	d.mux.Lock()
 	defer d.mux.Unlock()
@@ -177,6 +194,7 @@ func (d *DirectoryWatcherTap) Close() {
 	})
 }
 
+// IsOpen returns true if the tap is open
 func (d *DirectoryWatcherTap) IsOpen() bool {
 	d.mux.Lock()
 	defer d.mux.Unlock()
