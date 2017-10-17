@@ -12,9 +12,7 @@ $ go get github.com/xitonix/xvault
 
 ## Documentation
 
-![GoDoc](https://godoc.org/github.com/xitonix/xvault?status.svg)](https://godoc.org/github.com/xitonix/xvault)
-
-[](https://godoc.org/github.com/xitonix/xvault)
+ [![GoDoc](https://godoc.org/github.com/xitonix/xvault?status.svg)](https://godoc.org/github.com/xitonix/xvault)
 
 ## Status
 
