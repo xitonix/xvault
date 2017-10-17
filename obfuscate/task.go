@@ -15,32 +15,30 @@ const (
 	Decode
 )
 
-// Task is a unit of encryption/decryption work
+// Task represents an encryption/decryption request
 type Task struct {
-	mode  Operation
-	input io.Reader
-
-	status Status
+	mode    Operation
+	input   io.Reader
+	status  Status
+	outputs []io.Writer
 
 	mux        sync.Mutex
 	inProgress bool
-	outputs    []io.Writer
 }
 
 // NewTask creates a new Task object
 func NewTask(mode Operation, input io.Reader, output io.Writer) *Task {
 	return &Task{
-		mode:     mode,
-		input:    input,
-		outputs:  []io.Writer{output},
+		mode:    mode,
+		input:   input,
+		outputs: []io.Writer{output},
 
-		status:   Queued,
+		status: Queued,
 	}
 }
 
-// AddOutput adds a new new output to the Task
-// Calling this function on an in-progress Task will return ErrOperationInProgress error
-// You can check the progress state of a Task by calling IsRunning method
+// AddOutput adds a new output to the Task
+// Calling this function on an in-progress Task will return return an error of type obfuscate.ErrOperationInProgress
 func (t *Task) AddOutput(output io.Writer) error {
 	t.mux.Lock()
 	defer t.mux.Unlock()
@@ -53,7 +51,7 @@ func (t *Task) AddOutput(output io.Writer) error {
 
 // CloseInput closes the input Reader.
 // If the reader is not a io.Closer, calling this function will have no effect
-// Calling this function on an in-progress Task will return ErrOperationInProgress error
+// Calling CloseInput() on an in-progress Task will return an error of type obfuscate.ErrOperationInProgress
 func (t *Task) CloseInput() error {
 	t.mux.Lock()
 	defer t.mux.Unlock()
@@ -68,8 +66,9 @@ func (t *Task) CloseInput() error {
 }
 
 // CloseOutputs closes all the output Writers.
-// If the output is not a io.Closer, calling this function will have no effect
-// Calling this function on an in-progress Task will return ErrOperationInProgress error
+// If the output is not a io.Closer, calling this function will have no effect.
+//
+// Calling CloseOutputs() on an in-progress Task will return an error of type obfuscate.ErrOperationInProgress
 func (t *Task) CloseOutputs() error {
 	t.mux.Lock()
 	defer t.mux.Unlock()
@@ -88,16 +87,17 @@ func (t *Task) CloseOutputs() error {
 	return nil
 }
 
-func (t *Task) markAsInProgress() {
-	t.mux.Lock()
-	defer t.mux.Unlock()
-	t.inProgress = true
-}
-
+// Status returns the task's progress status
 func (t *Task) Status() Status {
 	t.mux.Lock()
 	defer t.mux.Unlock()
 	return t.status
+}
+
+func (t *Task) markAsInProgress() {
+	t.mux.Lock()
+	defer t.mux.Unlock()
+	t.inProgress = true
 }
 
 func (t *Task) markAsComplete(status Status) {

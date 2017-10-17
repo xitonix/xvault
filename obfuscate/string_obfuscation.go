@@ -6,8 +6,8 @@ import (
 	"errors"
 )
 
-// EncryptBytesFixed encrypts a string using a random crypto IV
-// Use this method when you want the encryption result of two same input to be be different
+// EncryptBytes encrypts a byte slice using a random crypto IV
+// Use this method when you want the encryption result of the two identical input to be different
 func EncryptBytes(key, text []byte) ([]byte, error) {
 	cipherText, base64, err := allocate(text, false)
 	if err != nil {
@@ -16,8 +16,8 @@ func EncryptBytes(key, text []byte) ([]byte, error) {
 	return encrypt(cipherText, base64, key)
 }
 
-// EncryptBytesFixed encrypts a string using a same crypto IV
-// Use this method when you want the encryption result of two same input to be be the same
+// EncryptBytesFixed encrypts a byte slice using the same crypto IV
+// Use this method when you want the encryption result of two identical input to be be the same
 func EncryptBytesFixed(key, text []byte) ([]byte, error) {
 	cipherText, base64, err := allocate(text, true)
 	if err != nil {

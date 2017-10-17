@@ -8,7 +8,7 @@ import (
 	"io"
 )
 
-// Decoder is the type that decrypts an io.Reader into one or more outputs using the specified master key
+// Decoder is the type that decrypts an io Reader into one or more io Writers using the specified master key
 type Decoder struct {
 	input      io.Reader
 	output     io.Writer
@@ -30,18 +30,20 @@ func NewDecoder(bufferSize int, master *MasterKey, input io.Reader, outputs ...i
 	}
 }
 
-// Decode decrypts the encoded content of the io.Reader into the specified outputs.
+// Decode decrypts the encoded content of the Reader into the specified Writer(s).
+//
 // This methods will return an error if the key is invalid or the decryption process fails.
-// The content of the input stream must be encoded using the same master key, otherwise the method will fail.
+// The content of the input stream must be encoded using the same master key.
 func (d *Decoder) Decode() (Status, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	return d.DecodeContext(ctx)
 }
 
-// DecodeContext decrypts the encoded content of the io.Reader into the specified outputs and receives cancellation signal on the context parameter
-// This methods will return an error if the key is invalid or the decryption process fails.
-// The content of the input stream must be encoded using the same master key, otherwise the method will fail.
+// DecodeContext decrypts the encoded content of the Reader into the specified Writer(s) and receives cancellation signal on the context parameter.
+//
+// It will return an error if the key is invalid or the decryption process fails.
+// The content of the input stream must be encoded using the same master key.
 func (d *Decoder) DecodeContext(ctx context.Context) (Status, error) {
 	if !d.master.isValid() {
 		return Failed, errInvalidKey

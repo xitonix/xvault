@@ -7,24 +7,6 @@ import (
 	"github.com/xitonix/xvault/obfuscate/mocks"
 )
 
-func TestTaskAddMetadata(t *testing.T) {
-	const (
-		metaKey   = "key"
-		metaValue = "value"
-	)
-	in := filebuffer.New(nil)
-	out := filebuffer.New(nil)
-	task := NewTask("name", Encode, in, out)
-	task.AddMetadata(metaKey, metaValue)
-	val, ok := task.MetaData[metaKey]
-	if !ok {
-		t.Errorf("Could not find '%s' in the Metadata map", metaKey)
-	}
-	if val.(string) != metaValue {
-		t.Errorf("Expected '%s' Metadata value, but received %v", metaValue, val)
-	}
-}
-
 func TestTaskAddOutput(t *testing.T) {
 	testCases := []struct {
 		title         string
@@ -46,7 +28,7 @@ func TestTaskAddOutput(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.title, func(t *testing.T) {
-			task := NewTask("name", Encode, in, out)
+			task := NewTask(Encode, in, out)
 			if tc.markAsRunning {
 				task.markAsInProgress()
 			}
@@ -74,7 +56,7 @@ func TestTaskCloseInputOutput(t *testing.T) {
 	in := &mocks.ReadCloser{}
 	out := &mocks.WriteCloser{}
 
-	task := NewTask("name", Encode, in, out)
+	task := NewTask(Encode, in, out)
 	task.CloseInput()
 	task.CloseOutputs()
 
@@ -91,7 +73,7 @@ func TestTaskCloseInputInProgress(t *testing.T) {
 	in := &mocks.ReadCloser{}
 	out := &mocks.WriteCloser{}
 
-	task := NewTask("name", Encode, in, out)
+	task := NewTask(Encode, in, out)
 	task.markAsInProgress()
 
 	err := task.CloseInput()

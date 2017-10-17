@@ -4,6 +4,7 @@ import (
 	"sync"
 )
 
+// WorkList is the pipe to flow the work units from the tap to the engine
 type WorkList chan *WorkUnit
 
 type stream struct {
@@ -20,33 +21,32 @@ type stream struct {
 
 	// to prevent multiple go routines to run
 	// shutdown and open at the same time
-	mux    sync.Mutex
-	opened bool
+	mux sync.Mutex
 }
 
 func newStream(bufferSize uint16, tap Tap) *stream {
-	return &stream{
+	s := &stream{
 		workList: make(WorkList, bufferSize),
 		done:     make(chan None),
 		inputTap: tap,
 	}
+
+	s.wg.Add(1)
+	go s.consumeTap()
+	return s
 }
 
 func (s *stream) open() {
 	s.mux.Lock()
 	defer s.mux.Unlock()
 
-	if s.opened {
-		return
-	}
-
 	s.openOnce.Do(func() {
-		s.wg.Add(1)
-		go s.consumeTap()
+		if s.inputTap == nil {
+			return
+		}
 		if !s.inputTap.IsOpen() {
 			s.inputTap.Open()
 		}
-		s.opened = true
 	})
 }
 
@@ -69,11 +69,10 @@ func (s *stream) shutdown() {
 	s.mux.Lock()
 	defer s.mux.Unlock()
 
-	if !s.opened {
-		return
-	}
-
 	s.shutdownOnce.Do(func() {
+		if s.inputTap == nil {
+			return
+		}
 		if s.inputTap.IsOpen() {
 			s.inputTap.Close()
 		}
@@ -83,6 +82,5 @@ func (s *stream) shutdown() {
 		s.wg.Wait()
 		// Signal the engine that we are done
 		close(s.workList)
-		s.opened = false
 	})
 }

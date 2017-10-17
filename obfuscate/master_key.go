@@ -7,13 +7,14 @@ import (
 	"unicode/utf8"
 )
 
-// MasterKey cryptography master key
+// MasterKey is the cryptography master key
 type MasterKey struct {
 	// key 32 bytes cryptography key
+	// Never store the key. It should always get calculated from the password
 	key []byte
 	// signature 28 bytes obfuscation signature
 	signature []byte
-	// password encrypted password which can be store in the password file
+	// password encrypted password which can safely be store in the password file
 	password []byte
 }
 
@@ -71,7 +72,7 @@ func KeyFromPassword(pass string) (*MasterKey, error) {
 	}
 
 	// We need to use the same IV to encrypt the password
-	// Otherwise the encryption result of two same passwords will be different
+	// Otherwise the encryption result of two identical passwords will be different
 	encrypted, err := EncryptBytesFixed(key, b)
 
 	if err != nil {

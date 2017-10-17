@@ -8,7 +8,7 @@ import (
 	"crypto/cipher"
 )
 
-// Encoder is the type that encrypts an io.Reader into one or more io.Writer outputs using the specified master key
+// Encoder is the type that encrypts an io Reader into one or more io Writers using the specified master key
 type Encoder struct {
 	input      io.Reader
 	output     io.Writer
@@ -30,7 +30,8 @@ func NewEncoder(bufferSize int, master *MasterKey, input io.Reader, outputs ...i
 	}
 }
 
-// Encode encrypts the io.Reader into the specified io.Writer outputs.
+// Encode encrypts the Reader into the specified Writer(s).
+//
 // This methods will return an error if the key is invalid or the encryption process fails.
 func (e *Encoder) Encode() (Status, error) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -38,7 +39,8 @@ func (e *Encoder) Encode() (Status, error) {
 	return e.EncodeContext(ctx)
 }
 
-// EncodeContext encrypts the io.Reader into the specified io.Writer outputs and receives cancellation signal on the context parameter.
+// EncodeContext encrypts the Reader into the specified Writer outputs and receives cancellation signal on the context parameter.
+//
 // This methods will return an error if the key is invalid or the encryption process fails.
 func (e *Encoder) EncodeContext(ctx context.Context) (Status, error) {
 	if !e.master.isValid() {

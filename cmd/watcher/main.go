@@ -11,16 +11,25 @@ import (
 
 	"github.com/xitonix/xvault/obfuscate"
 	"github.com/xitonix/xvault/taps"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 func main() {
 
-	master, err := obfuscate.KeyFromPassword("password")
+	fmt.Print("Enter your password: ")
+	password, err := terminal.ReadPassword(int(syscall.Stdin))
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	tap, err := taps.NewFilesystemTap("/home/alexg/src", "/home/alexg/target", 100*time.Millisecond, master, true, true, true)
+	master, err := obfuscate.KeyFromPassword(string(password))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println("\nStarting the service...")
+
+	tap, err := taps.NewDirectoryWatcherTap("src", "target", 100*time.Millisecond, master, true, true, true)
 
 	if err != nil {
 		log.Fatal(err)
@@ -46,6 +55,8 @@ func main() {
 	}()
 
 	engine.Start()
+
+	fmt.Println("The service is up and running. Press Ctrl+C to stop it")
 
 	signals := make(chan os.Signal)
 	signal.Notify(signals, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)

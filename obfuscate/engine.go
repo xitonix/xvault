@@ -5,8 +5,14 @@ import (
 	"sync"
 )
 
-// Engine is the type that implements the functionality of encrypting and decrypting
-// a vault's content.
+// Engine is the type that processes an stream of encrypt/decrypt work units.
+//
+// Once the processing of a work unit has been finished, the engine will call
+// the CallbackFunc of the unit (if specified) and sends the processing result back
+// to the function.
+//
+// In order to feed the engine with work units, you need to connect
+// your implementation of the Tap interface to it
 type Engine struct {
 	stream     *stream
 	wg         sync.WaitGroup
@@ -22,7 +28,7 @@ type Engine struct {
 	isRunning bool
 }
 
-// NewEngine creates a new instance of a vault processor object
+// NewEngine creates a new instance of the Engine type.
 func NewEngine(bufferSize uint16, tap Tap) *Engine {
 	return &Engine{
 		stream:     newStream(bufferSize, tap),
@@ -30,16 +36,17 @@ func NewEngine(bufferSize uint16, tap Tap) *Engine {
 	}
 }
 
-// Start starts the vault processor to serve the requests coming through over
-// the vault's WorkList channel. Once you are finished with the processor, you need to
-// call the Stop function. It's safe to call this method on a running processor
+// Start starts processing the work unit stream provided by the input Tap.
+// Once you are finished with the Engine, you need to call the Stop function.
+//
+// Starting the engine automatically opens the input tap. You SHOULD NOT
+// call the tap's Open function explicitly.
+//
+// NOTE: You can only call the Start method once.
+// Restarting an engine object has no effect.
 func (e *Engine) Start() {
 	e.mux.Lock()
 	defer e.mux.Unlock()
-
-	if e.isRunning {
-		return
-	}
 
 	e.startOnce.Do(func() {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -54,15 +61,15 @@ func (e *Engine) Start() {
 	})
 }
 
-// Stop stops the processor and releases the resources.
-// It's safe to call this function on a stopped processor
+// Stop stops the engine and releases the resources.
+// Stopping the engine will automatically close the input tap, so you don't need to
+// explicitly call the tap's Close function.
+//
+// NOTE: Once the engine has been stopped, starting it will have no effect.
 func (e *Engine) Stop() {
 	e.mux.Lock()
 	defer e.mux.Unlock()
 
-	if !e.isRunning {
-		return
-	}
 	e.stopOnce.Do(func() {
 		if e.cancel != nil {
 			e.isRunning = false
@@ -73,6 +80,7 @@ func (e *Engine) Stop() {
 	})
 }
 
+// IsON returns true if the engine has been started, otherwise returns false.
 func (e *Engine) IsON() bool {
 	e.mux.Lock()
 	defer e.mux.Unlock()
