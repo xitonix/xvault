@@ -28,15 +28,13 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Println("\nStarting the service...")
-
-	tap, err := taps.NewDirectoryWatcherTap("src", "target", 100*time.Millisecond, master, true, true, true)
+	tap, err := taps.NewFileTap("src", "d:\\target", time.Second, master, true, true, true)
 
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	engine := obfuscate.NewEngine(10, tap)
+	engine := obfuscate.NewEngine(50, tap)
 	wg := &sync.WaitGroup{}
 
 	wg.Add(1)
@@ -57,12 +55,15 @@ func main() {
 
 	engine.Start()
 
-	fmt.Println("The service is up and running. Press Ctrl+C to stop it")
+	go func() {
+		signals := make(chan os.Signal)
+		signal.Notify(signals, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
+		<-signals
+		engine.Stop()
+	}()
 
-	signals := make(chan os.Signal)
-	signal.Notify(signals, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
-	<-signals
+	tap.Process()
 	engine.Stop()
-	fmt.Println("The engine has been stopped successfully")
 	wg.Wait()
+	fmt.Println("The engine has been stopped successfully")
 }
