@@ -16,4 +16,4 @@ $ go get github.com/xitonix/xvault
 
 ## Status
 
-WIP
+Under active development (The API Might Change)
