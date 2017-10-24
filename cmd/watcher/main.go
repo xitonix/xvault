@@ -30,7 +30,7 @@ func main() {
 
 	fmt.Println("\nStarting the service...")
 
-	tap, err := taps.NewDirectoryWatcherTap("src", "target", 100*time.Millisecond, master, true, true, true)
+	tap, err := taps.NewDirectoryWatcherTap("src", "d:\\target", 100*time.Millisecond, master, true, false, true)
 
 	if err != nil {
 		log.Fatal(err)

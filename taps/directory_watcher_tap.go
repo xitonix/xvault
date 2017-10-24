@@ -12,6 +12,8 @@ import (
 	"github.com/radovskyb/watcher"
 	"github.com/rjeczalik/notify"
 	"github.com/xitonix/xvault/obfuscate"
+	"io"
+	"sync/atomic"
 )
 
 const (
@@ -22,19 +24,24 @@ const (
 	inputFullMetadataKey  = "input_full_path"
 )
 
+// File file
 type File struct {
-	Name, Path string
+	// Name file name
+	Name string
+	// Path file full path
+	Path string
 }
 
 // Result represents the progress details of a task
 type Result struct {
 	// Status the status of the operation
 	Status obfuscate.Status
-
 	// Error the error details of a failed task
 	Error error
-
-	Input, Output File
+	// Input input file
+	Input File
+	// Output output file
+	Output File
 }
 
 // DirectoryWatcherTap is a tap with the functionality of monitoring local filesystem and encrypting the content into the target directory.
@@ -51,6 +58,8 @@ type DirectoryWatcherTap struct {
 	wg             *sync.WaitGroup
 	done           chan obfuscate.None
 	fsEvents       chan notify.EventInfo
+	counter        int32
+	directories    map[string]struct{}
 
 	openOnce  sync.Once
 	closeOnce sync.Once
@@ -112,11 +121,11 @@ func NewDirectoryWatcherTap(source, target string,
 		pipe:      make(obfuscate.WorkList),
 		progress:  make(chan *Result),
 		done:      make(chan obfuscate.None),
+		report:    reportProgress,
 		// Make the channel buffered to ensure no event is dropped. Notify will drop
 		// an event if the receiver is not able to keep up the sending pace.
-		fsEvents: make(chan notify.EventInfo, 1),
-
-		report: reportProgress,
+		fsEvents:    make(chan notify.EventInfo, 1),
+		directories: make(map[string]struct{}),
 	}, nil
 }
 
@@ -161,22 +170,74 @@ func (d *DirectoryWatcherTap) Open() {
 	defer d.mux.Unlock()
 
 	d.openOnce.Do(func() {
-
-		d.wg.Add(1)
-		go func() {
-			defer d.wg.Done()
-			// Process the files which are currently in the source folder
-			d.processExistingFiles()
-		}()
+		if d.delete {
+			d.wg.Add(1)
+			go d.startCleaner()
+		}
 
 		d.wg.Add(1)
 		go d.startDirectoryWatcher()
 
 		d.isOpen = true
+
+		d.wg.Add(1)
+		// Process the files which are currently in the source folder
+		go d.processExistingFiles()
 	})
 }
+func (d *DirectoryWatcherTap) startCleaner() {
+	defer d.wg.Done()
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	var cleaning bool
+	for {
+		select {
+		case <-ticker.C:
+			if cleaning {
+				continue
+			}
+			if d.anythingToClean() {
+				fmt.Println("***** Cleaninggggggggggggggggggggggggggggggggg")
+				cleaning = true
+			}
+			for dir := range d.directories {
+				d.removeDirectory(dir)
+				delete(d.directories, dir)
+			}
+			cleaning = false
+		case <-d.done:
+			return
+		}
+	}
+}
+
+func (d *DirectoryWatcherTap) anythingToClean() bool {
+	count := atomic.LoadInt32(&d.counter)
+	fmt.Println("Count", count, d.directories)
+	return len(d.directories) > 0 && count == 0
+}
+
 func (d *DirectoryWatcherTap) processExistingFiles() {
-	// TODO Walk src
+	defer d.wg.Done()
+	err := filepath.Walk(d.source, func(path string, info os.FileInfo, err error) error {
+		if !d.isOpen {
+			return io.EOF
+		}
+
+		if info.IsDir() {
+			if path != d.source {
+				d.directories[path] = struct{}{}
+			}
+		} else {
+			atomic.AddInt32(&d.counter, 1)
+			d.dispatchWorkUnit(path, info)
+		}
+		return nil
+	})
+
+	if err != nil && err != io.EOF {
+		d.reportError(err)
+	}
 }
 
 // Close stops the filesystem watcher and releases the resources.
@@ -218,8 +279,10 @@ func (d *DirectoryWatcherTap) startDirectoryWatcher() {
 		d.Close()
 		return
 	}
-	files := make(map[string]time.Time)
-	ticker := time.NewTicker(1 * time.Second)
+	files := make(map[string]os.FileInfo)
+	const checkIntervalSeconds = 3
+	ticker := time.NewTicker(checkIntervalSeconds * time.Second)
+	var lastUpdate time.Time
 	var processing bool
 	defer ticker.Stop()
 	for {
@@ -227,30 +290,36 @@ func (d *DirectoryWatcherTap) startDirectoryWatcher() {
 		case <-d.done:
 			return
 		case ei := <-d.fsEvents:
-			files[ei.Path()] = time.Now()
+			lastUpdate = time.Now()
+			path := ei.Path()
+			f, err := os.Stat(path)
+			if err != nil {
+				if !os.IsNotExist(err) {
+					d.reportError(fmt.Errorf("os.Stat: %s", err))
+				}
+				continue
+			}
+			if f.IsDir() {
+				d.directories[path] = struct{}{}
+			} else {
+				files[path] = f
+			}
 		case <-ticker.C:
 			if processing {
 				continue
 			}
 			processing = true
-			now := time.Now()
-			if len(files) > 0 {
-				fmt.Println(len(files))
+			if len(files) == 0 || lastUpdate.IsZero() || time.Now().Sub(lastUpdate) < (checkIntervalSeconds*time.Second) {
+				processing = false
+				continue
 			}
-			for f, t := range files {
-				if now.Sub(t) >= time.Second {
-					fi, err := os.Stat(f)
-					if err != nil {
-						d.reportError(fmt.Errorf("os.Stat: %s", err))
-						continue
-					}
-					if !fi.IsDir() {
-						fmt.Println("**", f)
-						d.dispatchWorkUnit(f, fi)
-					}
-					delete(files, f)
-				}
+			atomic.AddInt32(&d.counter, int32(len(files)))
+
+			for path, fInfo := range files {
+				d.dispatchWorkUnit(path, fInfo)
+				delete(files, path)
 			}
+			lastUpdate = time.Time{}
 			processing = false
 		}
 	}
@@ -282,7 +351,7 @@ func (d *DirectoryWatcherTap) whenDone(w *obfuscate.WorkUnit) {
 		if err != nil {
 			d.reportError(fmt.Errorf("failed to remove '%s': %s", input.Name, err))
 		}
-		//d.removeDirectory(file)
+		atomic.AddInt32(&d.counter, -1)
 	}
 
 	if d.report && d.IsOpen() {
@@ -294,17 +363,20 @@ func (d *DirectoryWatcherTap) whenDone(w *obfuscate.WorkUnit) {
 		})
 	}
 }
-func (d *DirectoryWatcherTap) removeDirectory(file string) {
-	dir := filepath.Dir(file)
-	if dir == d.source || !isDirEmpty(dir) {
+
+func (d *DirectoryWatcherTap) removeDirectory(dir string) {
+	fmt.Println(dir, "Empty?", isDirEmpty(dir))
+	if dir == d.source {
 		return
 	}
 
-	err := os.RemoveAll(dir)
-	if err != nil {
-		d.reportError(fmt.Errorf("failed to remove '%s' directory: %s", dir, err))
+	if isDirEmpty(dir) {
+		err := os.RemoveAll(dir)
+		if err != nil && !os.IsNotExist(err) {
+			d.reportError(fmt.Errorf("failed to remove '%s' directory: %s", dir, err))
+		}
 	}
-	d.removeDirectory(dir)
+	d.removeDirectory(filepath.Dir(dir))
 }
 
 func (d *DirectoryWatcherTap) openInputFile(path string) (*os.File, string, error) {
