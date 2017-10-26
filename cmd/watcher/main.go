@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/xitonix/xvault/obfuscate"
-	"github.com/xitonix/xvault/taps"
+	"github.com/xitonix/xvault/taps/filesystem"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
@@ -30,7 +30,7 @@ func main() {
 
 	fmt.Println("\nStarting the service...")
 
-	tap, err := taps.NewDirectoryWatcherTap("src", "d:\\target", 100*time.Millisecond, master, true, false, true)
+	tap, err := filesystem.NewDirectoryWatcherTap("d:\\src", "d:\\target", 100*time.Millisecond, master, true, false, true)
 
 	if err != nil {
 		log.Fatal(err)

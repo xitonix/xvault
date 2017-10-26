@@ -1,19 +1,19 @@
-package taps
+package filesystem
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/radovskyb/watcher"
 	"github.com/rjeczalik/notify"
 	"github.com/xitonix/xvault/obfuscate"
-	"io"
-	"sync/atomic"
 )
 
 const (
@@ -60,6 +60,7 @@ type DirectoryWatcherTap struct {
 	fsEvents       chan notify.EventInfo
 	counter        int32
 	directories    map[string]struct{}
+	filesQueue     *queue
 
 	openOnce  sync.Once
 	closeOnce sync.Once
@@ -124,8 +125,11 @@ func NewDirectoryWatcherTap(source, target string,
 		report:    reportProgress,
 		// Make the channel buffered to ensure no event is dropped. Notify will drop
 		// an event if the receiver is not able to keep up the sending pace.
-		fsEvents:    make(chan notify.EventInfo, 1),
+		fsEvents:    make(chan notify.EventInfo, 1000),
 		directories: make(map[string]struct{}),
+		filesQueue: &queue{
+			monitors: make(map[string]*fileMonitor),
+		},
 	}, nil
 }
 
@@ -170,74 +174,19 @@ func (d *DirectoryWatcherTap) Open() {
 	defer d.mux.Unlock()
 
 	d.openOnce.Do(func() {
-		if d.delete {
-			d.wg.Add(1)
-			go d.startCleaner()
-		}
+		//if d.delete {
+		//	d.wg.Add(1)
+		//	go d.startCleaner()
+		//}
 
-		d.wg.Add(1)
-		go d.startDirectoryWatcher()
+		d.startDirectoryWatcher()
 
 		d.isOpen = true
 
-		d.wg.Add(1)
-		// Process the files which are currently in the source folder
-		go d.processExistingFiles()
+		//d.wg.Add(1)
+		//// Process the files which are currently in the source folder
+		//go d.processExistingFiles()
 	})
-}
-func (d *DirectoryWatcherTap) startCleaner() {
-	defer d.wg.Done()
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-	var cleaning bool
-	for {
-		select {
-		case <-ticker.C:
-			if cleaning {
-				continue
-			}
-			if d.anythingToClean() {
-				fmt.Println("***** Cleaninggggggggggggggggggggggggggggggggg")
-				cleaning = true
-			}
-			for dir := range d.directories {
-				d.removeDirectory(dir)
-				delete(d.directories, dir)
-			}
-			cleaning = false
-		case <-d.done:
-			return
-		}
-	}
-}
-
-func (d *DirectoryWatcherTap) anythingToClean() bool {
-	count := atomic.LoadInt32(&d.counter)
-	fmt.Println("Count", count, d.directories)
-	return len(d.directories) > 0 && count == 0
-}
-
-func (d *DirectoryWatcherTap) processExistingFiles() {
-	defer d.wg.Done()
-	err := filepath.Walk(d.source, func(path string, info os.FileInfo, err error) error {
-		if !d.isOpen {
-			return io.EOF
-		}
-
-		if info.IsDir() {
-			if path != d.source {
-				d.directories[path] = struct{}{}
-			}
-		} else {
-			atomic.AddInt32(&d.counter, 1)
-			d.dispatchWorkUnit(path, info)
-		}
-		return nil
-	})
-
-	if err != nil && err != io.EOF {
-		d.reportError(err)
-	}
 }
 
 // Close stops the filesystem watcher and releases the resources.
@@ -271,56 +220,114 @@ func (d *DirectoryWatcherTap) reportProgress(r *Result) {
 	d.progress <- r
 }
 
-func (d *DirectoryWatcherTap) startDirectoryWatcher() {
+func (d *DirectoryWatcherTap) startCleaner() {
 	defer d.wg.Done()
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	var cleaning bool
+	for {
+		select {
+		case <-ticker.C:
+			if cleaning {
+				continue
+			}
+			if d.anythingToClean() {
+				fmt.Println("***** Cleaning *****")
+				cleaning = true
+			}
+			for dir := range d.directories {
+				d.removeDirectory(dir)
+				delete(d.directories, dir)
+			}
+			cleaning = false
+		case <-d.done:
+			return
+		}
+	}
+}
 
-	if err := notify.Watch("src/...", d.fsEvents, notify.Create, notify.Write); err != nil {
+func (d *DirectoryWatcherTap) anythingToClean() bool {
+	count := atomic.LoadInt32(&d.counter)
+	return len(d.directories) > 0 && count == 0
+}
+
+func (d *DirectoryWatcherTap) processExistingFiles() {
+	defer d.wg.Done()
+	err := filepath.Walk(d.source, func(path string, info os.FileInfo, err error) error {
+		if !d.isOpen {
+			return io.EOF
+		}
+
+		if info.IsDir() {
+			if path != d.source {
+				d.directories[path] = struct{}{}
+			}
+		} else {
+			atomic.AddInt32(&d.counter, 1)
+			d.dispatchWorkUnit(path, info)
+		}
+		return nil
+	})
+
+	if err != nil && err != io.EOF {
+		d.reportError(err)
+	}
+}
+
+func (d *DirectoryWatcherTap) startDirectoryWatcher() {
+	if err := notify.Watch(d.source+"/...", d.fsEvents, notify.Create, notify.Write); err != nil {
 		d.reportError(err)
 		d.Close()
 		return
 	}
-	files := make(map[string]os.FileInfo)
-	const checkIntervalSeconds = 3
-	ticker := time.NewTicker(checkIntervalSeconds * time.Second)
-	var lastUpdate time.Time
-	var processing bool
-	defer ticker.Stop()
+
+	d.wg.Add(1)
+	go d.startFileQueueProcessor()
+
+	for i := 0; i < 100; i++ {
+		d.wg.Add(1)
+		go d.monitorFilesystemEvents()
+	}
+}
+
+func (d *DirectoryWatcherTap) monitorFilesystemEvents() {
+	defer d.wg.Done()
 	for {
 		select {
 		case <-d.done:
 			return
 		case ei := <-d.fsEvents:
-			lastUpdate = time.Now()
 			path := ei.Path()
-			f, err := os.Stat(path)
+			isDir, err := d.filesQueue.addOrUpdate(path)
 			if err != nil {
-				if !os.IsNotExist(err) {
-					d.reportError(fmt.Errorf("os.Stat: %s", err))
-				}
+				d.reportError(err)
 				continue
 			}
-			if f.IsDir() {
-				d.directories[path] = struct{}{}
-			} else {
-				files[path] = f
-			}
-		case <-ticker.C:
-			if processing {
-				continue
-			}
-			processing = true
-			if len(files) == 0 || lastUpdate.IsZero() || time.Now().Sub(lastUpdate) < (checkIntervalSeconds*time.Second) {
-				processing = false
-				continue
-			}
-			atomic.AddInt32(&d.counter, int32(len(files)))
 
-			for path, fInfo := range files {
-				d.dispatchWorkUnit(path, fInfo)
-				delete(files, path)
+			if isDir {
+				d.directories[path] = struct{}{}
 			}
-			lastUpdate = time.Time{}
-			processing = false
+		}
+	}
+}
+
+func (d *DirectoryWatcherTap) startFileQueueProcessor() {
+	defer d.wg.Done()
+	const checkIntervalSeconds = 3
+	ticker := time.NewTicker(checkIntervalSeconds * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-d.done:
+			return
+		case <-ticker.C:
+			files := d.filesQueue.all()
+			for _, file := range files {
+				if file.isReady() {
+					d.dispatchWorkUnit(file.path, file.fi)
+					d.filesQueue.remove(file.path)
+				}
+			}
 		}
 	}
 }
@@ -365,7 +372,6 @@ func (d *DirectoryWatcherTap) whenDone(w *obfuscate.WorkUnit) {
 }
 
 func (d *DirectoryWatcherTap) removeDirectory(dir string) {
-	fmt.Println(dir, "Empty?", isDirEmpty(dir))
 	if dir == d.source {
 		return
 	}
@@ -402,7 +408,7 @@ func (d *DirectoryWatcherTap) createOutputFile(name, inputFullPath string) (*os.
 }
 
 func (d *DirectoryWatcherTap) dispatchWorkUnit(path string, file os.FileInfo) {
-
+	atomic.AddInt32(&d.counter, 1)
 	input, inputFullPath, err := d.openInputFile(path)
 	if err != nil {
 		d.reportError(fmt.Errorf("failed to open '%s': %s", path, err))
