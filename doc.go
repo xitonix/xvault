@@ -2,6 +2,7 @@
 // You can manually use the provided Encoder and Decoder types or automate the encryption/decryption tasks by implementing
 // a new Tap and passing it to an engine object.
 //
+//
 // Here is an example of using an engine object with a Directory Watcher Tap:
 //
 //	import (
@@ -47,7 +48,6 @@
 //				fmt.Printf("%s > %s %s\n", p.Input.Name, p.Output.Name, p.Status)
 //			}
 //		}()
-//
 //		engine.Start()
 //
 //		signals := make(chan os.Signal)
