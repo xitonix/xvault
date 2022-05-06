@@ -16,4 +16,3 @@ $ go get github.com/xitonix/xvault
 
 ## Status
 WIP
-
