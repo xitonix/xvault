@@ -12,11 +12,6 @@ Xvault implements a generic encryption/decryption library which takes any `io.Re
 $ go get github.com/xitonix/xvault
 ```
 
-
-
-
-
-
 ## Documentation
 
  [![GoDoc](https://godoc.org/github.com/xitonix/xvault?status.svg)](https://godoc.org/github.com/xitonix/xvault)
